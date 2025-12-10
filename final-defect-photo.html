@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Line Defect Detail</title>
+
+<style>
+:root{
+  --bg:#f0f4f8;
+  --card:#ffffff;
+  --muted:#555;
+  --accent:#1565c0;
+  --border:#cfd8dc;
+  --header-bg:#e1f5fe;
+  --header-color:#01579b;
+  --row-hover:#e3f2fd;
+  --file-bg:#e8f5e9;
+  --search-bg:#e3f2fd;
+  --search-border:#90caf9;
+}
+
+body{
+  font-family: 'Inter', Arial, sans-serif;
+  background: var(--bg);
+  margin:0; padding:10px;
+  color:#111;
+}
+
+.container{max-width:1200px; margin:0 auto;}
+h1{
+  font-size:26px;
+  text-align:center;
+  color:var(--header-color);
+  margin-bottom:10px;
+}
+
+.card{
+  background: var(--card);
+  border-radius:10px;
+  padding:10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  border:1px solid var(--border);
+  margin-top:20px;
+  position:relative;
+}
+
+/* SEARCH BOX */
+#searchBox{
+  width:50%;
+  padding:10px;
+  margin-bottom:10px;
+  border-radius:6px;
+  border:1px solid var(--search-border);
+  font-size:15px;
+  background: var(--search-bg);
+  color:#000;
+  position:sticky;
+  top:0;
+  z-index:20;
+}
+
+/* TABLE WRAPPER */
+.table-wrap{
+  overflow:auto;
+  max-height:520px;
+  position:relative;
+  border-radius:6px;
+}
+
+/* TABLE */
+table{
+  width:100%;
+  border-collapse:collapse;
+  min-width:700px;
+}
+
+th, td{
+  border:1px solid var(--border);
+  padding:10px;
+  text-align:left;
+  font-size:14px;
+}
+
+th{
+  background: var(--header-bg);
+  color: var(--header-color);
+  font-weight:550;
+  position:sticky;
+  top:-3px;
+  z-index:15;
+}
+
+tr:hover td{ background: var(--row-hover); }
+
+/* IMAGE PREVIEW RESPONSIVE */
+.img-preview{
+  width:120px;
+  height:120px;
+  object-fit:cover;
+  border-radius:6px;
+  border:1px solid #ccc;
+}
+
+/* MOBILE RESPONSIVE */
+@media(max-width:700px){
+  h1{ font-size:22px; }
+
+  .img-preview{
+    width:60px;
+    height:60px;
+  }
+
+  th, td{
+    padding:6px;
+    font-size:12px;
+  }
+
+  #searchBox{
+    font-size:14px;
+  }
+
+  th{
+    top:-2px;
+  }
+}
+
+@media(max-width:480px){
+  .img-preview{
+    width:50px;
+    height:50px;
+  }
+  th, td{
+    font-size:11px;
+    padding:5px;
+  }
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+  <h1>Line Defect Details</h1>
+
+  <div class="card">
+    <input type="text" id="searchBox" placeholder="Search by name, section, date, etc.">
+    <div class="table-wrap" id="tableWrap">Loading sheet…</div>
+  </div>
+</div>
+
+<script>
+const CSV_URL =
+"https://docs.google.com/spreadsheets/d/e/2PACX-1vQ1slz07WtJvbm09QTfM-_jae2SIuMIMZongm_vtwloL17Z1QIqCHXcyoJbtaMP8Gy5zmJh7tlwurrc/pub?output=csv";
+
+const HIDE_COLS = ["Time Span","Duration","Timestamp"];
+let allRows = [];
+
+// CSV PARSE
+function parseCSV(text){
+  const lines = text.split(/\r?\n/);
+  return lines.map(line => {
+    const parts = [];
+    let current = "", insideQuotes = false;
+
+    for (let char of line) {
+      if (char === '"') insideQuotes = !insideQuotes;
+      else if (char === ',' && !insideQuotes) {
+        parts.push(current);
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    parts.push(current);
+    return parts;
+  });
+}
+
+// FILE ID EXTRACTOR
+function extractDriveFileId(url){
+  if(!url) return null;
+
+  let m = url.match(/\/d\/([A-Za-z0-9_-]{20,})/);
+  if(m) return m[1];
+
+  m = url.match(/id=([A-Za-z0-9_-]{20,})/);
+  if(m) return m[1];
+
+  m = url.match(/open\?id=([A-Za-z0-9_-]{20,})/);
+  if(m) return m[1];
+
+  m = url.match(/[-\w]{20,}/);
+  if(m) return m[0];
+
+  return null;
+}
+
+// PREVIEW IMAGE
+function makeFilePreview(fileId){
+  const img = document.createElement("img");
+  img.className = "img-preview";
+  img.src = `https://drive.google.com/thumbnail?id=${fileId}`;
+  img.onerror = () => {
+    img.src = "https://via.placeholder.com/40?text=No+Img";
+  };
+  return img;
+}
+
+// LOAD CSV
+fetch(CSV_URL)
+  .then(r => r.text())
+  .then(txt => {
+    allRows = parseCSV(txt);
+    renderTable(allRows);
+  });
+
+// RENDER TABLE
+function renderTable(rows){
+  const wrap = document.getElementById("tableWrap");
+  wrap.innerHTML = "";
+
+  if(!rows.length){
+    wrap.textContent = "Sheet empty.";
+    return;
+  }
+
+  const header = rows[0];
+  const visible = header
+      .map((h,i)=> HIDE_COLS.includes(h) ? -1 : i)
+      .filter(i=> i >= 0);
+
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+
+  visible.forEach(i => {
+    const th = document.createElement("th");
+    th.textContent = header[i];
+    trh.appendChild(th);
+  });
+
+  trh.appendChild(document.createElement("th")).textContent="Download Image";
+  trh.appendChild(document.createElement("th")).textContent="Open Image";
+
+  thead.appendChild(trh);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
+  rows.slice(1).forEach(row => {
+    const tr = document.createElement("tr");
+
+    let fileId="", dURL="", vURL="";
+
+    visible.forEach(i => {
+      const td = document.createElement("td");
+      let val = (row[i] || "").trim();
+
+      if(val.includes("drive.google.com")){
+        fileId = extractDriveFileId(val);
+
+        if(fileId){
+          td.appendChild(makeFilePreview(fileId));
+          dURL = `https://drive.google.com/uc?export=download&id=${fileId}`;
+          vURL = `https://drive.google.com/uc?export=view&id=${fileId}`;
+        }
+      } else {
+        td.textContent = val;
+      }
+      tr.appendChild(td);
+    });
+
+    const tdD = document.createElement("td");
+    if(dURL){
+      const a = document.createElement("a");
+      a.href = dURL; a.textContent = "Download"; a.target = "_blank";
+      tdD.appendChild(a);
+    }
+    tr.appendChild(tdD);
+
+    const tdO = document.createElement("td");
+    if(vURL){
+      const a = document.createElement("a");
+      a.href = vURL; a.textContent = "Open"; a.target = "_blank";
+      tdO.appendChild(a);
+    }
+    tr.appendChild(tdO);
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+
+// ZERO BLINK SEARCH
+document.getElementById("searchBox").addEventListener("input", function(){
+  const q = this.value.toLowerCase();
+  const rows = document.querySelectorAll("tbody tr");
+
+  rows.forEach(r => {
+    r.style.display = r.innerText.toLowerCase().includes(q) ? "" : "none";
+  });
+});
+</script>
+
+</body>
+</html>
